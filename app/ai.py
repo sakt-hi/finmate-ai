@@ -20,11 +20,36 @@ def process_message(message):
     USER MESSAGE:
     "{message}"
 
+    IMPORTANT UNDERSTANDING:
+
+    Only classify as expense or expense_list if the user is ACTUALLY recording a transaction.
+
+    Examples of NON-expense messages:
+
+    User:
+    "I want to track my expenses"
+
+    Return:
+    {{
+        "type": "chat",
+        "reply": "Sure 👋 You can track expenses by sending messages like: 'Spent 120 for tea'"
+    }}
+
+    User:
+    "How does this work?"
+
+    Return:
+    {{
+        "type": "chat",
+        "reply": "You can track expenses, view summaries, and manage budgets."
+    }}
+
     POSSIBLE RESPONSE TYPES:
 
     1. chat
 
     Example:
+
     {{
         "type": "chat",
         "reply": "Hello 👋"
@@ -32,7 +57,15 @@ def process_message(message):
 
     2. expense
 
-    Example:
+    Single expense transaction.
+
+    Examples:
+
+    User:
+    Spent 120 for tea
+
+    Return:
+
     {{
         "type": "expense",
         "transactions": [
@@ -44,19 +77,43 @@ def process_message(message):
         ]
     }}
 
+    User:
+    Spent 50000 for laptop
+
+    Return:
+
+    {{
+        "type": "expense",
+        "transactions": [
+            {{
+                "amount": 50000,
+                "category": "Shopping",
+                "description": "Laptop"
+            }}
+        ]
+    }}
+
     3. expense_list
 
-    Example:
+    Multiple expense transactions.
+
+    Examples:
+
+    User:
+    Spent 40 for tea and 300 for groceries
+
+    Return:
+
     {{
         "type": "expense_list",
         "transactions": [
             {{
-                "amount": 25,
+                "amount": 40,
                 "category": "Food",
                 "description": "Tea"
             }},
             {{
-                "amount": 100,
+                "amount": 300,
                 "category": "Groceries",
                 "description": "Groceries"
             }}
@@ -65,65 +122,57 @@ def process_message(message):
 
     4. summary
 
-    For grouped spending totals.
+    Example:
 
-    Examples:
-    - summary today
-    - summary this week
-    - how much did i spend this month
-
-    Return:
-    {
+    {{
         "type": "summary",
-        "period": "today"
-    }
-
-    Optional category filter:
-    {
-        "type": "summary",
-        "period": "this_month",
-        "category": "Food"
-    }
+        "period": "this_month"
+    }}
 
     5. transactions
 
-    For listing individual transactions.
+    Example:
 
-    Examples:
-    - all transactions today
-    - show my expenses this week
-    - list transactions this month
-
-    Return:
-    {
+    {{
         "type": "transactions",
         "period": "today"
-    }
+    }}
 
-    6. confirm
+    6. budget
 
     Example:
+
     {{
-        "type": "confirm",
-        "amount": 50000,
-        "category": "Shopping",
-        "description": "Shopping",
-        "reply": "Do you want me to record ₹50000 under Shopping?"
+        "type": "budget",
+        "category": "Food",
+        "amount": 5000
     }}
 
     7. out_of_scope
 
     Example:
+
     {{
         "type": "out_of_scope",
         "reply": "I'm focused on finance tracking 😊"
     }}
 
     IMPORTANT RULES:
+
     - Convert word amounts into numbers
+    - Convert amounts written in words into numeric values
+
+    Examples:
+
+    "fifty rupees" → 50
+    "one hundred" → 100
+    "five thousand" → 5000
+
     - Return ONLY valid JSON
     - No markdown
     - No explanations
+    - Always return structured JSON
+    - Expense amounts must always be numeric
     """
 
     response = requests.post(
@@ -137,9 +186,7 @@ def process_message(message):
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You are a strict JSON API."
-                    )
+                    "content": "You are a strict JSON API"
                 },
                 {
                     "role": "user",
@@ -157,15 +204,10 @@ def process_message(message):
 
     content = data["choices"][0]["message"]["content"]
 
-    print("AI RESPONSE:")
-    print(content)
-
     try:
-
         return json.loads(content)
 
-    except Exception:
-
+    except:
         return {
             "type": "chat",
             "reply": "Sorry 😊"

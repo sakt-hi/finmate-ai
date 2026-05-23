@@ -7,13 +7,14 @@ from datetime import timedelta
 
 from app.db.models import User
 from app.db.models import Transaction
+from app.db.models import Budget
 
 
 def create_user(
-    db: Session,
-    phone: str,
-    name: str,
-    currency: str
+    db,
+    phone,
+    name,
+    currency
 ):
 
     user = User(
@@ -32,8 +33,8 @@ def create_user(
 
 
 def get_user(
-    db: Session,
-    phone: str
+    db,
+    phone
 ):
 
     return db.query(User).filter(
@@ -42,11 +43,11 @@ def get_user(
 
 
 def save_transaction(
-    db: Session,
-    phone: str,
-    amount: float,
-    category: str,
-    description: str
+    db,
+    phone,
+    amount,
+    category,
+    description
 ):
 
     transaction = Transaction(
@@ -65,18 +66,43 @@ def save_transaction(
     return transaction
 
 
+def set_budget(
+    db,
+    phone,
+    category,
+    amount
+):
+
+    budget = Budget(
+        phone=phone,
+        category=category,
+        monthly_limit=amount
+    )
+
+    db.add(budget)
+
+    db.commit()
+
+    db.refresh(budget)
+
+    return budget
+
+
 def get_summary(
-    db: Session,
-    phone: str,
-    period: str,
-    category: str = None
+    db,
+    phone,
+    period,
+    category=None
 ):
 
     now = datetime.utcnow()
 
-    start_date = now
+    start_date = datetime(
+        now.year,
+        now.month,
+        1
+    )
 
-    # PERIOD LOGIC
     if period == "today":
 
         start_date = datetime(
@@ -89,42 +115,6 @@ def get_summary(
 
         start_date = now - timedelta(
             days=now.weekday()
-        )
-
-    elif period == "this_month":
-
-        start_date = datetime(
-            now.year,
-            now.month,
-            1
-        )
-
-    elif period == "last_month":
-
-        first_day_this_month = datetime(
-            now.year,
-            now.month,
-            1
-        )
-
-        last_day_last_month = (
-            first_day_this_month
-            - timedelta(days=1)
-        )
-
-        start_date = datetime(
-            last_day_last_month.year,
-            last_day_last_month.month,
-            1
-        )
-
-        now = datetime(
-            last_day_last_month.year,
-            last_day_last_month.month,
-            last_day_last_month.day,
-            23,
-            59,
-            59
         )
 
     query = db.query(
@@ -132,34 +122,34 @@ def get_summary(
         func.sum(Transaction.amount)
     ).filter(
         Transaction.phone == phone,
-        Transaction.created_at >= start_date,
-        Transaction.created_at <= now
+        Transaction.created_at >= start_date
     )
 
-    # CATEGORY FILTER
     if category:
 
         query = query.filter(
             Transaction.category.ilike(category)
         )
 
-    results = query.group_by(
+    return query.group_by(
         Transaction.category
     ).all()
 
-    return results
 
 def get_transactions(
-    db: Session,
-    phone: str,
-    period: str
+    db,
+    phone,
+    period
 ):
 
     now = datetime.utcnow()
 
-    start_date = now
+    start_date = datetime(
+        now.year,
+        now.month,
+        1
+    )
 
-    # PERIOD LOGIC
     if period == "today":
 
         start_date = datetime(
@@ -174,50 +164,9 @@ def get_transactions(
             days=now.weekday()
         )
 
-    elif period == "this_month":
-
-        start_date = datetime(
-            now.year,
-            now.month,
-            1
-        )
-
-    elif period == "last_month":
-
-        first_day_this_month = datetime(
-            now.year,
-            now.month,
-            1
-        )
-
-        last_day_last_month = (
-            first_day_this_month
-            - timedelta(days=1)
-        )
-
-        start_date = datetime(
-            last_day_last_month.year,
-            last_day_last_month.month,
-            1
-        )
-
-        now = datetime(
-            last_day_last_month.year,
-            last_day_last_month.month,
-            last_day_last_month.day,
-            23,
-            59,
-            59
-        )
-
-    results = db.query(
-        Transaction
-    ).filter(
+    return db.query(Transaction).filter(
         Transaction.phone == phone,
-        Transaction.created_at >= start_date,
-        Transaction.created_at <= now
+        Transaction.created_at >= start_date
     ).order_by(
         Transaction.created_at.desc()
     ).all()
-
-    return results
