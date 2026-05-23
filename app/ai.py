@@ -15,13 +15,10 @@ def process_message(message):
     You are FinMate AI.
 
     ROLE:
-    Personal finance and expense tracking assistant.
+    Personal finance assistant.
 
     USER MESSAGE:
     "{message}"
-
-    TASK:
-    Analyze the message carefully.
 
     POSSIBLE RESPONSE TYPES:
 
@@ -35,24 +32,21 @@ def process_message(message):
 
     2. expense
 
-    Single expense example:
+    Example:
     {{
         "type": "expense",
         "transactions": [
             {{
                 "amount": 120,
                 "category": "Food",
-                "description": "Biriyani"
+                "description": "Tea"
             }}
         ]
     }}
 
     3. expense_list
 
-    Multiple expenses example:
-    "Spent 25 for tea and 100 for groceries"
-
-    Return:
+    Example:
     {{
         "type": "expense_list",
         "transactions": [
@@ -69,11 +63,44 @@ def process_message(message):
         ]
     }}
 
-    4. confirm
+    4. summary
 
-    For:
-    - unusually large amounts
-    - doubtful transactions
+    For grouped spending totals.
+
+    Examples:
+    - summary today
+    - summary this week
+    - how much did i spend this month
+
+    Return:
+    {
+        "type": "summary",
+        "period": "today"
+    }
+
+    Optional category filter:
+    {
+        "type": "summary",
+        "period": "this_month",
+        "category": "Food"
+    }
+
+    5. transactions
+
+    For listing individual transactions.
+
+    Examples:
+    - all transactions today
+    - show my expenses this week
+    - list transactions this month
+
+    Return:
+    {
+        "type": "transactions",
+        "period": "today"
+    }
+
+    6. confirm
 
     Example:
     {{
@@ -84,7 +111,7 @@ def process_message(message):
         "reply": "Do you want me to record ₹50000 under Shopping?"
     }}
 
-    5. out_of_scope
+    7. out_of_scope
 
     Example:
     {{
@@ -97,7 +124,6 @@ def process_message(message):
     - Return ONLY valid JSON
     - No markdown
     - No explanations
-    - No code
     """
 
     response = requests.post(
@@ -112,8 +138,7 @@ def process_message(message):
                 {
                     "role": "system",
                     "content": (
-                        "You are a strict JSON API. "
-                        "Always return valid JSON only."
+                        "You are a strict JSON API."
                     )
                 },
                 {
@@ -139,11 +164,9 @@ def process_message(message):
 
         return json.loads(content)
 
-    except Exception as e:
-
-        print("JSON ERROR:", e)
+    except Exception:
 
         return {
             "type": "chat",
-            "reply": "Sorry, I couldn't understand that."
+            "reply": "Sorry 😊"
         }
