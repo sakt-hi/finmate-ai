@@ -9,6 +9,32 @@ from app.db.models import User
 from app.db.models import Transaction
 from app.db.models import Budget
 
+import uuid
+
+CATEGORY_PREFIX = {
+
+    "Food": "F",
+
+    "Transportation": "T",
+
+    "Shopping": "S",
+
+    "Entertainment": "E",
+
+    "Medical": "M",
+
+    "Groceries": "G",
+
+    "Bills": "B",
+
+    "Travel": "TR",
+
+    "Stationery": "ST",
+
+    "Miscellaneous": "O",
+
+    "Other": "O"
+}
 
 def create_user(
     db,
@@ -50,7 +76,43 @@ def save_transaction(
     description
 ):
 
+    prefix = CATEGORY_PREFIX.get(
+        category,
+        "O"
+    )
+
+    # GET LAST CATEGORY TRANSACTION
+
+    last_transaction = db.query(Transaction).filter(
+        Transaction.short_id.like(f"{prefix}%")
+    ).order_by(
+        Transaction.id.desc()
+    ).first()
+
+    next_number = 1
+
+    if last_transaction:
+
+        try:
+
+            last_number = int(
+                last_transaction.short_id.replace(
+                    prefix,
+                    ""
+                )
+            )
+
+            next_number = last_number + 1
+
+        except:
+            pass
+
+    short_id = f"{prefix}{next_number:03d}"
+
     transaction = Transaction(
+
+        transaction_id=f"TXN-{uuid.uuid4().hex[:6].upper()}",
+        short_id=short_id,
         phone=phone,
         amount=amount,
         category=category,
@@ -170,3 +232,65 @@ def get_transactions(
     ).order_by(
         Transaction.created_at.desc()
     ).all()
+
+
+def get_recent_transactions(
+    db,
+    phone,
+    limit=5
+):
+
+    return db.query(Transaction).filter(
+        Transaction.phone == phone
+    ).order_by(
+        Transaction.id.desc()
+    ).limit(limit).all()
+
+def delete_transactions(
+    db,
+    short_ids
+):
+
+    deleted_transactions = []
+
+    for short_id in short_ids:
+
+        transaction = db.query(Transaction).filter(
+            Transaction.short_id == short_id.upper()
+        ).first()
+
+        if transaction:
+
+            deleted_transactions.append({
+                "short_id": transaction.short_id,
+                "amount": transaction.amount,
+                "category": transaction.category,
+                "description": transaction.description
+            })
+
+            db.delete(transaction)
+
+    db.commit()
+
+    return deleted_transactions
+
+def edit_transaction_amount(
+    db,
+    short_id,
+    amount
+):
+
+    transaction = db.query(Transaction).filter(
+        Transaction.short_id == short_id.upper()
+    ).first()
+
+    if not transaction:
+        return None
+
+    transaction.amount = amount
+
+    db.commit()
+
+    db.refresh(transaction)
+
+    return transaction

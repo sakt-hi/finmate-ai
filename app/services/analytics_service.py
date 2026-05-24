@@ -68,12 +68,14 @@ def build_transaction_response(
         total += tx.amount
 
         lines.append(
-            f"• {tx.description} → "
-            f"{currency}{tx.amount}"
+            f"#{tx.short_id}\n"
+            f"{currency}{tx.amount} • "
+            f"{tx.category} • "
+            f"{tx.description}"
         )
 
     return (
-        f"Transactions ({period}) 💸\n\n"
-        + "\n".join(lines)
-        + f"\n\nTotal → {currency}{total}"
+        f"📜 Recent Transactions\n\n"
+        + "\n\n".join(lines)
+        + f"\n\n💰 Total → {currency}{total}"
     )

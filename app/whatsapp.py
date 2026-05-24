@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter
 from fastapi import Form
 
@@ -12,7 +14,9 @@ from app.db.database import SessionLocal
 from app.db.crud import (
     create_user,
     get_user,
-    set_budget
+    set_budget,
+    delete_transactions,
+    edit_transaction_amount
 )
 
 from app.services.transaction_service import (
@@ -27,6 +31,7 @@ from app.services.analytics_service import (
 from app.state import pending_confirmations
 
 router = APIRouter()
+
 
 CONFIRM_WORDS = [
     "yes",
@@ -51,6 +56,23 @@ CANCEL_WORDS = [
 ]
 
 
+def send_reply(
+    twilio_response,
+    message
+):
+
+    twilio_response.message(message)
+
+    print("\n========== TWILIO RESPONSE ==========")
+    print(str(twilio_response))
+    print("=====================================\n")
+
+    return Response(
+        content=str(twilio_response),
+        media_type="application/xml"
+    )
+
+
 @router.post("/webhook")
 async def whatsapp_webhook(
     Body: str = Form(...),
@@ -69,22 +91,21 @@ async def whatsapp_webhook(
 
     user = get_user(db, phone)
 
+    # ==========================================
     # FIRST TIME USER
+    # ==========================================
+
     if not user:
 
         if "|" not in message:
 
-            twilio_response.message(
+            return send_reply(
+                twilio_response,
                 "Welcome to FinMate AI 🚀\n\n"
                 "Setup format:\n"
                 "Name | Currency\n\n"
                 "Example:\n"
                 "Sakthi | ₹"
-            )
-
-            return Response(
-                content=str(twilio_response),
-                media_type="application/xml"
             )
 
         parts = message.split("|")
@@ -100,24 +121,23 @@ async def whatsapp_webhook(
             currency
         )
 
-        twilio_response.message(
+        return send_reply(
+            twilio_response,
             f"Setup completed ✅\n\n"
             f"Welcome {name}!"
         )
 
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
-        )
-
+    # ==========================================
     # CONFIRMATION FLOW
+    # ==========================================
+
     if phone in pending_confirmations:
 
         pending = pending_confirmations[phone]
 
         if lower_message in CONFIRM_WORDS:
 
-            handle_transactions(
+            response_text = handle_transactions(
                 db,
                 phone,
                 user.currency,
@@ -126,28 +146,25 @@ async def whatsapp_webhook(
 
             del pending_confirmations[phone]
 
-            twilio_response.message(
-                f"Added {user.currency}{pending['amount']} under {pending['category']} ✅"
-            )
-
-            return Response(
-                content=str(twilio_response),
-                media_type="application/xml"
+            return send_reply(
+                twilio_response,
+                response_text
             )
 
         if lower_message in CANCEL_WORDS:
 
             del pending_confirmations[phone]
 
-            twilio_response.message(
+            return send_reply(
+                twilio_response,
                 "Okay 👍 Transaction cancelled."
             )
 
-            return Response(
-                content=str(twilio_response),
-                media_type="application/xml"
-            )
-    GREETINGS = [
+    # ==========================================
+    # GREETINGS
+    # ==========================================
+
+    greetings = [
         "hi",
         "hello",
         "hey",
@@ -155,42 +172,165 @@ async def whatsapp_webhook(
         "yo"
     ]
 
-    if lower_message in GREETINGS:
+    if lower_message in greetings:
 
-        twilio_response.message(
+        return send_reply(
+            twilio_response,
             f"Hello {user.name} 👋\n\n"
             f"I'm FinMate AI — your personal finance assistant.\n\n"
             f"I can help you:\n"
             f"• Track expenses\n"
             f"• View summaries\n"
-            f"• Check transactions\n"
-            f"• Manage budgets\n\n"
-            f"Example:\n"
-            f"'Spent 120 for biriyani'"
+            f"• Manage budgets\n"
+            f"• Edit transactions\n"
+            f"• Delete transactions\n\n"
+            f"Examples:\n"
+            f"• Spent 120 for biriyani\n"
+            f"• Show recent transactions\n"
+            f"• Delete #F001\n"
+            f"• Edit #F001 to 150"
         )
 
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
+    # ==========================================
+    # DIRECT DELETE DETECTION
+    # ==========================================
+
+    delete_keywords = [
+        "delete",
+        "remove"
+    ]
+
+    if any(
+        word in lower_message
+        for word in delete_keywords
+    ):
+
+        detected_ids = [
+
+            tx_id.replace("#", "")
+
+            for tx_id in re.findall(
+                r'#?[A-Za-z]{1,2}\d{3}',
+                message.upper()
+            )
+        ]
+
+        if detected_ids:
+
+            deleted_transactions = delete_transactions(
+                db,
+                detected_ids
+            )
+
+            if not deleted_transactions:
+
+                return send_reply(
+                    twilio_response,
+                    "Transaction not found 😊"
+                )
+
+            response_text = (
+                "🗑️ Deleted Transactions\n\n"
+            )
+
+            for tx in deleted_transactions:
+
+                response_text += (
+                    f"#{tx['short_id']} • "
+                    f"{user.currency}{tx['amount']} • "
+                    f"{tx['category']} • "
+                    f"{tx['description']}\n"
+                )
+
+            return send_reply(
+                twilio_response,
+                response_text
+            )
+
+    # ==========================================
+    # DIRECT EDIT DETECTION
+    # ==========================================
+
+    edit_keywords = [
+        "edit",
+        "change",
+        "update",
+        "modify"
+    ]
+
+    if any(
+        word in lower_message
+        for word in edit_keywords
+    ):
+
+        detected_ids = [
+
+            tx_id.replace("#", "")
+
+            for tx_id in re.findall(
+                r'#?[A-Za-z]{1,2}\d{3}',
+                message.upper()
+            )
+        ]
+
+        detected_amounts = re.findall(
+            r'\d+',
+            message
         )
+
+        if detected_ids and detected_amounts:
+
+            short_id = detected_ids[0]
+
+            amount = float(
+                detected_amounts[-1]
+            )
+
+            transaction = edit_transaction_amount(
+                db,
+                short_id,
+                amount
+            )
+
+            if not transaction:
+
+                return send_reply(
+                    twilio_response,
+                    "Transaction not found 😊"
+                )
+
+            return send_reply(
+                twilio_response,
+                f"✏️ Transaction Updated\n\n"
+                f"#{transaction.short_id}\n"
+                f"{user.currency}{transaction.amount} • "
+                f"{transaction.category} • "
+                f"{transaction.description}"
+            )
+
+    # ==========================================
+    # AI PROCESSING
+    # ==========================================
 
     result = process_message(message)
 
     result_type = result.get("type")
 
+    # ==========================================
     # CHAT
+    # ==========================================
+
     if result_type == "chat":
 
-        twilio_response.message(
+        return send_reply(
+            twilio_response,
             result.get("reply", "Hello 👋")
         )
 
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
-        )
-
+    # ==========================================
     # SUMMARY
+    # ==========================================
+
     if result_type == "summary":
 
         response_text = build_summary_response(
@@ -201,15 +341,19 @@ async def whatsapp_webhook(
             result.get("category")
         )
 
-        twilio_response.message(response_text)
-
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
+        return send_reply(
+            twilio_response,
+            response_text
         )
 
+    # ==========================================
     # TRANSACTIONS
-    if result_type == "transactions":
+    # ==========================================
+
+    if result_type in [
+        "transactions",
+        "transaction_history"
+    ]:
 
         response_text = build_transaction_response(
             db,
@@ -218,14 +362,15 @@ async def whatsapp_webhook(
             result.get("period", "today")
         )
 
-        twilio_response.message(response_text)
-
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
+        return send_reply(
+            twilio_response,
+            response_text
         )
 
+    # ==========================================
     # BUDGET
+    # ==========================================
+
     if result_type == "budget":
 
         set_budget(
@@ -235,61 +380,82 @@ async def whatsapp_webhook(
             result.get("amount")
         )
 
-        twilio_response.message(
-            f"Budget set for {result.get('category')} ✅"
+        return send_reply(
+            twilio_response,
+            f"Budget set for "
+            f"{result.get('category')} ✅"
         )
 
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
-        )
-
+    # ==========================================
     # EXPENSES
-    if result_type in ["expense", "expense_list"]:
+    # ==========================================
+
+    if result_type in [
+        "expense",
+        "expense_list"
+    ]:
+
+        minimum_words = len(
+            lower_message.split()
+        )
+
+        if minimum_words <= 1:
+
+            return send_reply(
+                twilio_response,
+                "Please provide a valid transaction 😊\n\n"
+                "Examples:\n"
+                "• Spent 120 for tea\n"
+                "• 50 for bus ticket"
+            )
 
         transactions = result.get(
             "transactions",
             []
         )
 
-        # FILTER VALID TRANSACTIONS
-
         valid_transactions = []
 
         for tx in transactions:
 
-            try:
+            amount = tx.get(
+                "amount",
+                0
+            )
 
-                amount = float(tx.get("amount", 0))
+            description = tx.get(
+                "description"
+            )
 
-                if amount > 0:
-
-                    tx["amount"] = amount
-
-                    valid_transactions.append(tx)
-
-            except:
-
+            if not isinstance(
+                amount,
+                (int, float)
+            ):
                 continue
 
-        transactions = valid_transactions
+            if amount <= 0:
+                continue
 
-        if not transactions:
+            if amount > 1000000000:
+                continue
 
-            twilio_response.message(
-                "Please send a valid expense 😊\n\n"
-                "Example:\n"
-                "Spent 120 for tea"
+            if not description:
+                continue
+
+            valid_transactions.append(tx)
+
+        if not valid_transactions:
+
+            return send_reply(
+                twilio_response,
+                "I couldn't identify a valid transaction 😊"
             )
 
-            return Response(
-                content=str(twilio_response),
-                media_type="application/xml"
-            )
+        # LARGE TRANSACTION
 
         large_transaction = next(
             (
-                tx for tx in transactions
+                tx for tx in valid_transactions
                 if tx.get("amount", 0) >= 10000
             ),
             None
@@ -299,37 +465,35 @@ async def whatsapp_webhook(
 
             pending_confirmations[phone] = large_transaction
 
-            twilio_response.message(
+            return send_reply(
+                twilio_response,
                 f"Large expense detected ⚠️\n\n"
-                f"{user.currency}{large_transaction['amount']} under {large_transaction['category']}\n\n"
+                f"{user.currency}"
+                f"{large_transaction['amount']} • "
+                f"{large_transaction['category']}\n\n"
                 f"1️⃣ Confirm\n"
                 f"2️⃣ Cancel"
             )
 
-            return Response(
-                content=str(twilio_response),
-                media_type="application/xml"
-            )
+        # SAVE TRANSACTIONS
 
         response_text = handle_transactions(
             db,
             phone,
             user.currency,
-            transactions
+            valid_transactions
         )
 
-        twilio_response.message(response_text)
-
-        return Response(
-            content=str(twilio_response),
-            media_type="application/xml"
+        return send_reply(
+            twilio_response,
+            response_text
         )
 
-    twilio_response.message(
+    # ==========================================
+    # FALLBACK
+    # ==========================================
+
+    return send_reply(
+        twilio_response,
         "Sorry, I couldn't understand that 😊"
-    )
-
-    return Response(
-        content=str(twilio_response),
-        media_type="application/xml"
     )

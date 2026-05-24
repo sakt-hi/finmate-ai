@@ -28,6 +28,10 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    transaction_id = Column(String, unique=True)
+
+    short_id = Column(String, unique=True, index=True)
+
     phone = Column(String)
 
     amount = Column(Float)
@@ -36,10 +40,7 @@ class Transaction(Base):
 
     description = Column(String)
 
-    created_at = Column(
-        DateTime,
-        default=datetime.utcnow
-    )
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Budget(Base):
 

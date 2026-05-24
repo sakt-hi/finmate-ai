@@ -32,7 +32,7 @@ def handle_transactions(
             continue
 
         # SAVE
-        save_transaction(
+        saved_transaction = save_transaction(
             db,
             phone,
             amount,
@@ -40,8 +40,13 @@ def handle_transactions(
             description
         )
 
+        # BUILD RESPONSE
         saved_messages.append(
-            f"• {currency}{amount} → {category}"
+            f"✅ Added Transaction\n\n"
+            f"{saved_transaction.short_id}\n"
+            f"{currency}{saved_transaction.amount} • "
+            f"{saved_transaction.category} • "
+            f"{saved_transaction.description}"
         )
 
     # NOTHING SAVED
@@ -51,7 +56,4 @@ def handle_transactions(
             "No valid transactions found 😊"
         )
 
-    return (
-        "Transactions added ✅\n\n"
-        + "\n".join(saved_messages)
-    )
+    return "\n\n".join(saved_messages)
